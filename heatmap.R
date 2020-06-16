@@ -52,9 +52,13 @@ png("heatmap.png",width = 2000, height = 2000)
     data %>%
     ungroup %>%
     select(date,state,normalized) %>%
+    mutate(normalized = -normalized) %>%
     filter(!is.na(normalized)) %>%
     spread(date,normalized) %>%
     select(-state) %>%
     as.matrix %>%
-    heatmap(.,Colv = NA,labRow = unique(data$state))
+    heatmap(.,
+            Colv = NA,
+            labRow = unique(data$state),
+            col = hcl.colors(12, palette = "RdYlBu"))
 dev.off()
