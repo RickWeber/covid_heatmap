@@ -47,10 +47,14 @@ heat_map_plot1 <- data %>% ggplot(aes(date,state)) +
     theme(legend.position="none") +
     scale_fill_brewer(palette = "RdYlBu") # not working
 
-heat_map_plot2 <- data %>%
+## heat_map_plot2 <-
+png("heatmap.png",width = 2000, height = 2000)
+    data %>%
     ungroup %>%
     select(date,state,normalized) %>%
     filter(!is.na(normalized)) %>%
     spread(date,normalized) %>%
     select(-state) %>%
-    as.matrix %>% heatmap(.,Colv = NA) #, labRow =  )
+    as.matrix %>%
+    heatmap(.,Colv = NA,labRow = unique(data$state))
+dev.off()
