@@ -11,7 +11,7 @@ pop <- pop %>%
 '%ni%' <- Negate('%in%')
 # I owe this person a shrubbery: https://stackoverflow.com/posts/46867726/revisions
 
-data <- read_csv("time_series_covid19_confirmed_US.csv") %>% 
+cases <- read_csv("time_series_covid19_confirmed_US.csv") %>% 
     pivot_longer(cols=contains("/"),names_to="date",values_to="cases") %>% 
     mutate(date = as.Date(date, format ="%m/%d/%y")) %>%
     rename(state = Province_State) %>%
@@ -29,27 +29,82 @@ data <- read_csv("time_series_covid19_confirmed_US.csv") %>%
     mutate(moving_avg = moving_avg/population) %>%
     mutate(normalized = scale(moving_avg))
 
-# cluster the data
-clustered <- data %>%
-    ungroup %>%
-    select(date,state,normalized) %>%
-    filter(!is.na(normalized)) %>%
-    spread(date,normalized) %>%
-    as.matrix %>% dist %>% hclust
+deaths <- read_csv("time_series_covid19_deaths_US.csv") %>% 
+    pivot_longer(cols=contains("/"),names_to="date",values_to="cases") %>% 
+    mutate(date = as.Date(date, format ="%m/%d/%y")) %>%
+    rename(state = Province_State) %>%
+    filter(state %ni% c("Virgin Islands","Northern Mariana Islands","Guam","Grand Princess","Diamond Princess","American Samoa")) %>%
+    group_by(state,date) %>% 
+    summarize(cases = sum(cases)) %>%
+    ungroup() %>%
+    group_by(state) %>%
+    arrange(state,date) %>% 
+    mutate(new_cases = rollapply(cases,2,diff,align='right',fill=NA)) %>%
+    left_join(pop) %>%
+    mutate(cases =  cases/population,
+           new_cases = new_cases/population) %>%
+    mutate(moving_avg = rollapply(new_cases,7,mean,align='right',fill=NA)) %>%
+    mutate(moving_avg = moving_avg/population) %>%
+    mutate(normalized = scale(moving_avg))
 
 # plots
-time_series_plot <- data %>% ggplot(aes(date,moving_avg)) + 
+time_series_plot_cases <- cases %>% ggplot(aes(date,moving_avg)) + 
     geom_line(aes(col=state)) + 
     theme(legend.position="none")
 
-heat_map_plot1 <- data %>% ggplot(aes(date,state)) + 
-    geom_tile(aes(fill=normalized)) + 
-    theme(legend.position="none") +
-    scale_fill_brewer(palette = "RdYlBu") # not working
+time_series_plot_deaths <- deaths %>% ggplot(aes(date,moving_avg)) + 
+    geom_line(aes(col=state)) + 
+    theme(legend.position="none")
 
-## heat_map_plot2 <-
-png("heatmap.png",width = 2000, height = 2000)
-    data %>%
+## heat_map_plot1 <- data %>% ggplot(aes(date,state)) + 
+##     geom_tile(aes(fill=normalized)) + 
+##     theme(legend.position="none") +
+##     scale_fill_brewer(palette = "RdYlBu") # not working
+
+#### Heatmap: cases
+heatmap_cases <- cases %>%
+    ungroup %>%
+    select(date,state,normalized) %>%
+    mutate(normalized = -normalized) %>%
+    filter(!is.na(normalized)) %>%
+    spread(date,normalized) %>%
+    select(-state) %>%
+    as.matrix %>%
+    heatmap(.,
+            Colv = NA,
+            labRow = unique(data$state),
+            col = hcl.colors(12, palette = "RdYlBu"))
+
+png("heatmap_cases.png",width = 2000, height = 2000)
+    cases %>%
+    ungroup %>%
+    select(date,state,normalized) %>%
+    mutate(normalized = -normalized) %>%
+    filter(!is.na(normalized)) %>%
+    spread(date,normalized) %>%
+    select(-state) %>%
+    as.matrix %>%
+    heatmap(.,
+            Colv = NA,
+            labRow = unique(data$state),
+            col = hcl.colors(12, palette = "RdYlBu"))
+dev.off()
+
+#### Heatmap: deaths
+heatmap_cases <- deaths %>%
+    ungroup %>%
+    select(date,state,normalized) %>%
+    mutate(normalized = -normalized) %>%
+    filter(!is.na(normalized)) %>%
+    spread(date,normalized) %>%
+    select(-state) %>%
+    as.matrix %>%
+    heatmap(.,
+            Colv = NA,
+            labRow = unique(data$state),
+            col = hcl.colors(12, palette = "RdYlBu"))
+png("heatmap_deaths.png",width = 2000, height = 2000)
+deaths %>%
     ungroup %>%
     select(date,state,normalized) %>%
     mutate(normalized = -normalized) %>%
