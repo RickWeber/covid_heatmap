@@ -17,9 +17,9 @@ cases <- read_csv("time_series_covid19_confirmed_US.csv") %>%
     rename(state = Province_State) %>%
     filter(state %ni% c("Virgin Islands","Northern Mariana Islands","Guam","Grand Princess","Diamond Princess","American Samoa")) %>%
     group_by(state,date) %>% 
-    summarize(cases = sum(cases)) %>%
+    summarize(cases = sum(cases)) %>% # daily cases by state
     ungroup() %>%
-    group_by(state) %>%
+    group_by(state) %>% 
     arrange(state,date) %>% 
     mutate(new_cases = rollapply(cases,2,diff,align='right',fill=NA)) %>%
     left_join(pop) %>%
@@ -29,21 +29,22 @@ cases <- read_csv("time_series_covid19_confirmed_US.csv") %>%
     mutate(moving_avg = moving_avg/population) %>%
     mutate(normalized = scale(moving_avg))
 
+
 deaths <- read_csv("time_series_covid19_deaths_US.csv") %>% 
-    pivot_longer(cols=contains("/"),names_to="date",values_to="cases") %>% 
+    pivot_longer(cols=contains("/"),names_to="date",values_to="deaths") %>% 
     mutate(date = as.Date(date, format ="%m/%d/%y")) %>%
     rename(state = Province_State) %>%
     filter(state %ni% c("Virgin Islands","Northern Mariana Islands","Guam","Grand Princess","Diamond Princess","American Samoa")) %>%
     group_by(state,date) %>% 
-    summarize(cases = sum(cases)) %>%
+    summarize(deaths = sum(deaths)) %>%
     ungroup() %>%
     group_by(state) %>%
     arrange(state,date) %>% 
-    mutate(new_cases = rollapply(cases,2,diff,align='right',fill=NA)) %>%
+    mutate(new_deaths = rollapply(deaths,2,diff,align='right',fill=NA)) %>%
     left_join(pop) %>%
-    mutate(cases =  cases/population,
-           new_cases = new_cases/population) %>%
-    mutate(moving_avg = rollapply(new_cases,7,mean,align='right',fill=NA)) %>%
+    mutate(deaths =  deaths/population,
+           new_deaths = new_deaths/population) %>%
+    mutate(moving_avg = rollapply(new_deaths,7,mean,align='right',fill=NA)) %>%
     mutate(moving_avg = moving_avg/population) %>%
     mutate(normalized = scale(moving_avg))
 
