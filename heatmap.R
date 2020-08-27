@@ -2,7 +2,7 @@ library(tidyverse)
 library(readxl)
 library(zoo)
 pop <- read_excel("nst-est2019-01.xlsx",skip = 3) %>%
-    select(1,13)
+        select(1,13)
 colnames(pop) <- c("state","population")
 pop <- pop %>%
     mutate(state = str_remove(state,"[.]")) %>%
@@ -26,7 +26,7 @@ cases <- read_csv("time_series_covid19_confirmed_US.csv") %>%
     mutate(cases =  cases/population,
            new_cases = new_cases/population) %>%
     mutate(moving_avg = rollapply(new_cases,7,mean,align='right',fill=NA)) %>%
-    mutate(moving_avg = moving_avg/population) %>%
+    # mutate(moving_avg = moving_avg/population) %>%
     mutate(normalized = scale(moving_avg))
 
 
@@ -45,7 +45,7 @@ deaths <- read_csv("time_series_covid19_deaths_US.csv") %>%
     mutate(deaths =  deaths/population,
            new_deaths = new_deaths/population) %>%
     mutate(moving_avg = rollapply(new_deaths,7,mean,align='right',fill=NA)) %>%
-    mutate(moving_avg = moving_avg/population) %>%
+    # mutate(moving_avg = moving_avg/population) %>%
     mutate(normalized = scale(moving_avg))
 
 # plots
@@ -87,7 +87,7 @@ png("heatmap_cases.png",width = 2000, height = 2000)
     as.matrix %>%
     heatmap(.,
             Colv = NA,
-            labRow = unique(data$state),
+            labRow = unique(cases$state),
             col = hcl.colors(12, palette = "RdYlBu"))
 dev.off()
 
