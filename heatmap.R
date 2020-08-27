@@ -73,7 +73,7 @@ heatmap_cases <- cases %>%
     as.matrix %>%
     heatmap(.,
             Colv = NA,
-            labRow = unique(data$state),
+            labRow = unique(cases$state),
             col = hcl.colors(12, palette = "RdYlBu"))
 
 png("heatmap_cases.png",width = 2000, height = 2000)
@@ -115,6 +115,6 @@ deaths %>%
     as.matrix %>%
     heatmap(.,
             Colv = NA,
-            labRow = unique(data$state),
+            labRow = unique(deaths$state),
             col = hcl.colors(12, palette = "RdYlBu"))
 dev.off()
