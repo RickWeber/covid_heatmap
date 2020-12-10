@@ -1,120 +1,194 @@
-library(tidyverse)
-library(readxl)
-library(zoo)
-pop <- read_excel("nst-est2019-01.xlsx",skip = 3) %>%
-        select(1,13)
-colnames(pop) <- c("state","population")
-pop <- pop %>%
-    mutate(state = str_remove(state,"[.]")) %>%
-    filter(!is.na(population))
-
+rm(list=ls())
+pacman::p_load(tidyverse,lubridate,zoo)
+# Let's download the data directly instead of pulling their github repository for every update...
+case_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv"
+death_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv"
 '%ni%' <- Negate('%in%')
 # I owe this person a shrubbery: https://stackoverflow.com/posts/46867726/revisions
+# Map data
+county_map <- map_data("county")
+state_map <- map_data("state")
+# Pull and process data from Johns Hopkins
+case_data <- read_csv(case_url) %>%
+    pivot_longer(contains("/"),
+                 values_to = "cases",
+                 names_to = "date") %>%
+    mutate(date = mdy(date),
+           region = tolower(Province_State)) # add region column for work with map_data
 
-cases <- read_csv("time_series_covid19_confirmed_US.csv") %>% 
-    pivot_longer(cols=contains("/"),names_to="date",values_to="cases") %>% 
-    mutate(date = as.Date(date, format ="%m/%d/%y")) %>%
-    rename(state = Province_State) %>%
-    filter(state %ni% c("Virgin Islands","Northern Mariana Islands","Guam","Grand Princess","Diamond Princess","American Samoa")) %>%
-    group_by(state,date) %>% 
-    summarize(cases = sum(cases)) %>% # daily cases by state
-    ungroup() %>%
-    group_by(state) %>% 
-    arrange(state,date) %>% 
-    mutate(new_cases = rollapply(cases,2,diff,align='right',fill=NA)) %>%
-    left_join(pop) %>%
-    mutate(cases =  cases/population,
-           new_cases = new_cases/population) %>%
-    mutate(moving_avg = rollapply(new_cases,7,mean,align='right',fill=NA)) %>%
-    # mutate(moving_avg = moving_avg/population) %>%
-    mutate(normalized = scale(moving_avg))
+death_data <- read_csv(death_url) %>%
+    pivot_longer(contains("/"),
+                 values_to = "deaths",
+                 names_to = "date") %>%
+    mutate(date = mdy(date),
+           region = tolower(Province_State))
 
+county_data <- 
+    full_join(case_data,death_data) %>%
+        filter(Province_State %ni%   # Drop some locations
+                   c("Virgin Islands","Northern Mariana Islands",
+                     "Guam","Grand Princess","Diamond Princess",
+                     "American Samoa")) %>%
+    group_by(FIPS) %>%
+    arrange(FIPS, date) %>%
+    mutate(cases_percap = cases / Population,
+           deaths_percap = deaths / Population,
+           new_cases = rollapply(cases,
+                                  2,
+                                  diff,
+                                  na.pad = TRUE,
+                                  align = 'right'),
+           new_deaths = rollapply(deaths,
+                                   2,
+                                   diff,
+                                   na.pad = TRUE,
+                                   align = 'right'),
+           
+           new_cases_percap = new_cases / Population,
+           new_deaths_percap = new_deaths / Population,
+           new_cases_7day = rollmean(new_cases_percap,
+                                     7,
+                                     na.pad = TRUE,
+                                     align = 'right'),
+           new_deaths_7day = rollmean(new_deaths_percap,
+                                     7,
+                                     na.pad = TRUE,
+                                     align = 'right'),
+           normalized_cases = scale(new_cases_7day),
+           normalized_deaths = scale(new_deaths_7day)) %>%
+    ungroup
 
-deaths <- read_csv("time_series_covid19_deaths_US.csv") %>% 
-    pivot_longer(cols=contains("/"),names_to="date",values_to="deaths") %>% 
-    mutate(date = as.Date(date, format ="%m/%d/%y")) %>%
-    rename(state = Province_State) %>%
-    filter(state %ni% c("Virgin Islands","Northern Mariana Islands","Guam","Grand Princess","Diamond Princess","American Samoa")) %>%
-    group_by(state,date) %>% 
-    summarize(deaths = sum(deaths)) %>%
-    ungroup() %>%
-    group_by(state) %>%
-    arrange(state,date) %>% 
-    mutate(new_deaths = rollapply(deaths,2,diff,align='right',fill=NA)) %>%
-    left_join(pop) %>%
-    mutate(deaths =  deaths/population,
-           new_deaths = new_deaths/population) %>%
-    mutate(moving_avg = rollapply(new_deaths,7,mean,align='right',fill=NA)) %>%
-    # mutate(moving_avg = moving_avg/population) %>%
-    mutate(normalized = scale(moving_avg))
+state_data <- county_data %>%
+    group_by(date,region) %>%
+    summarize(cases = sum(cases,na.rm=T),  # add up counties
+              Population = sum(Population,na.rm=T),
+              deaths = sum(deaths,na.rm=T)) %>% 
+    ungroup %>% 
+    arrange(region, date) %>%
+    mutate(cases_percap = cases / Population,
+           deaths_percap = deaths / Population,
+           new_cases = rollapply(cases,
+                                 2,
+                                 diff,
+                                 na.pad = TRUE, # this format is depricated. Fix later
+                                 align = 'right'),
+           new_deaths = rollapply(deaths,
+                                  2,
+                                  diff,
+                                  na.pad = TRUE,
+                                  align = 'right'),
+           new_cases_percap = new_cases / Population,
+           new_deaths_percap = new_deaths / Population,
+           new_cases_7day = rollmean(new_cases,
+                                     7,
+                                     na.pad = TRUE,
+                                     align = 'right'),
+           new_deaths_7day = rollmean(new_deaths,
+                                      7,
+                                      na.pad = TRUE,
+                                      align = 'right'),
+           normalized_cases = scale(new_cases_7day),
+           normalized_deaths = scale(new_deaths_7day)) %>%
+    ungroup
+
+### Make some maps
+yesterday <- now() %>% as.Date() - days(1)
+state_normalized_deaths_map <- 
+state_data %>% filter(date == yesterday) %>%
+    right_join(state_map) %>%
+    ggplot(aes(long,lat,group = region)) +
+    geom_polygon(aes(fill = normalized_deaths))
+state_normalized_cases_map <- 
+    state_data %>% filter(date == yesterday) %>%
+    right_join(state_map) %>%
+    ggplot(aes(long,lat,group = region)) +
+    geom_polygon(aes(fill = normalized_cases))
+# County maps
+# county_data %>% filter(date == yesterday) %>%
+#     right_join(county_map) %>%
+#     arrange(order) %>%
+#     ggplot(aes(long,lat,group = subregion)) +
+#     geom_polygon(aes(fill = normalized_deaths))
+# # Okay, something's wrong here. But I don't need to fix it now.
+
 
 # plots
-time_series_plot_cases <- cases %>% ggplot(aes(date,moving_avg)) + 
-    geom_line(aes(col=state)) + 
+time_series_plot_cases <- state_data %>% 
+    filter(date > '2020-03-01') %>%
+    ggplot(aes(date,normalized_cases)) + 
+    geom_line(aes(col=region)) + 
     theme(legend.position="none")
 
-time_series_plot_deaths <- deaths %>% ggplot(aes(date,moving_avg)) + 
-    geom_line(aes(col=state)) + 
+time_series_plot_deaths <- state_data %>% 
+    filter(date > '2020-03-01') %>%
+    ggplot(aes(date,normalized_deaths)) + 
+    geom_line(aes(col=region)) + 
     theme(legend.position="none")
 
-## heat_map_plot1 <- data %>% ggplot(aes(date,state)) + 
-##     geom_tile(aes(fill=normalized)) + 
-##     theme(legend.position="none") +
-##     scale_fill_brewer(palette = "RdYlBu") # not working
+state_data %>% 
+    filter(date > '2020-03-01') %>% ggplot(aes(date,region)) +
+    geom_tile(aes(fill = normalized_deaths))
+
+heat_map_plot1 <- state_data %>% 
+    filter(date > '2020-03-01') %>% ggplot(aes(date,region)) +
+    geom_tile(aes(fill=normalized_cases)) +
+    theme(legend.position="none") 
 
 #### Heatmap: cases
-heatmap_cases <- cases %>%
-    ungroup %>%
-    select(date,state,normalized) %>%
-    mutate(normalized = -normalized) %>%
-    filter(!is.na(normalized)) %>%
-    spread(date,normalized) %>%
-    select(-state) %>%
+heatmap_cases <- state_data %>%
+    filter(date > '2020-03-01') %>%
+    select(date,region,normalized_cases) %>%
+    mutate(normalized_cases = -normalized_cases) %>%
+    filter(!is.na(normalized_cases)) %>%
+    spread(date,normalized_cases) %>%
+    select(-region) %>%
     as.matrix %>%
     heatmap(.,
             Colv = NA,
-            labRow = unique(cases$state),
+            labRow = unique(state_data$region),
             col = hcl.colors(12, palette = "RdYlBu"))
 
 png("heatmap_cases.png",width = 2000, height = 2000)
-    cases %>%
-    ungroup %>%
-    select(date,state,normalized) %>%
-    mutate(normalized = -normalized) %>%
-    filter(!is.na(normalized)) %>%
-    spread(date,normalized) %>%
-    select(-state) %>%
+state_data %>%
+    filter(date > '2020-03-01') %>%
+    select(date,region,normalized_cases) %>%
+    mutate(normalized_cases = -normalized_cases) %>%
+    filter(!is.na(normalized_cases)) %>%
+    spread(date,normalized_cases) %>%
+    select(-region) %>%
     as.matrix %>%
     heatmap(.,
             Colv = NA,
-            labRow = unique(cases$state),
+            labRow = unique(state_data$region),
             col = hcl.colors(12, palette = "RdYlBu"))
 dev.off()
 
 #### Heatmap: deaths
-heatmap_cases <- deaths %>%
-    ungroup %>%
-    select(date,state,normalized) %>%
-    mutate(normalized = -normalized) %>%
-    filter(!is.na(normalized)) %>%
-    spread(date,normalized) %>%
-    select(-state) %>%
+heatmap_deaths <-  state_data %>%
+    filter(date > '2020-03-01') %>%
+    select(date,region,normalized_deaths) %>%
+    mutate(normalized_deaths = -normalized_deaths) %>%
+    filter(!is.na(normalized_deaths)) %>%
+    spread(date,normalized_deaths) %>%
+    select(-region) %>%
     as.matrix %>%
     heatmap(.,
             Colv = NA,
-            labRow = unique(data$state),
+            labRow = unique(state_data$region),
             col = hcl.colors(12, palette = "RdYlBu"))
+
+
 png("heatmap_deaths.png",width = 2000, height = 2000)
-deaths %>%
-    ungroup %>%
-    select(date,state,normalized) %>%
-    mutate(normalized = -normalized) %>%
-    filter(!is.na(normalized)) %>%
-    spread(date,normalized) %>%
-    select(-state) %>%
+state_data %>%
+    filter(date > '2020-03-01') %>%
+    select(date,region,normalized_deaths) %>%
+    mutate(normalized_deaths = -normalized_deaths) %>%
+    filter(!is.na(normalized_deaths)) %>%
+    spread(date,normalized_deaths) %>%
+    select(-region) %>%
     as.matrix %>%
     heatmap(.,
             Colv = NA,
-            labRow = unique(deaths$state),
+            labRow = unique(state_data$region),
             col = hcl.colors(12, palette = "RdYlBu"))
 dev.off()
