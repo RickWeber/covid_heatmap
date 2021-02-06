@@ -1,5 +1,5 @@
 rm(list=ls())
-pacman::p_load(tidyverse,lubridate,zoo)
+pacman::p_load(tidyverse,lubridate,zoo,gganimate,transformr)
 # Let's download the data directly instead of pulling their github repository for every update...
 case_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv"
 death_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv"
@@ -192,3 +192,16 @@ state_data %>%
             labRow = unique(state_data$region),
             col = hcl.colors(12, palette = "RdYlBu"))
 dev.off()
+
+### gganimate
+
+# # animated_map <- 
+#     state_data %>%
+#     full_join(state_map) %>%
+#     arrange(order) %>%
+#     ggplot(aes(long,lat,group = region)) +
+#     geom_polygon(aes(fill = normalized_cases)) +
+#     transition_time(date) + ease_aes('linear')
+#     
+# anim_save("state_cases.gif")
+#     
